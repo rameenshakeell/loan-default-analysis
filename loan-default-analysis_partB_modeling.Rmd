@@ -1,0 +1,1505 @@
+---
+title: "R Notebook - Getting started with Assignment 2 on the Lending Club case"
+author: "Group 9"
+date: "IDS 572 Spr'25"
+output:
+  pdf_document: default
+  html_document: null
+---
+data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAbElEQVR4Xs2RQQrAMAgEfZgf7W9LAguybljJpR3wEse5JOL3ZObDb4x1loDhHbBOFU6i2Ddnw2KNiXcdAXygJlwE8OFVBHDgKrLgSInN4WMe9iXiqIVsTMjH7z/GhNTEibOxQswcYIWYOR/zAjBJfiXh3jZ6AAAAAElFTkSuQmCC
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+
+Note: the following sections have R code for Assignment-2 of the Lending Club case.
+This is example code - you need to modify/adapt this as needed for your analyses.
+Please make sure you understand what the code does, and not blindly run through it. 
+
+
+
+```{r results='hide'}
+library(tidyverse)
+library(lubridate)
+
+```
+
+
+Number 1
+```{r results='hide'}
+
+lcdf <- read.csv('C:/Users/tyler/OneDrive/Desktop/UIC/IDS 572/lcdfSample.csv')
+str(lcdf)
+```
+Number 2a
+```{r}
+
+#What is the proportion of defaults (‘charged off’ vs ‘fully paid’ loans) in the data?
+lcdf %>% group_by(loan_status) %>% tally()
+lcdf %>% group_by(loan_status) %>% summarise(n=n()) %>% mutate(proportion=n/sum(n))
+
+#How does loan status vary by loan grade and subgrade
+table(lcdf$loan_status, lcdf$grade)
+table(lcdf$loan_status, lcdf$sub_grade)
+
+#How many loans are there in each grade
+lcdf %>% group_by(grade) %>% tally()
+
+#loan amount by grade and loan status
+
+avg_loan_amount_by_grade_status <- aggregate(loan_amnt ~ grade + loan_status, data = lcdf, FUN = mean)
+ggplot(avg_loan_amount_by_grade_status, aes(x = grade, y = loan_amnt, fill = loan_status)) +
+  geom_bar(stat = 'identity', position = 'dodge', color = 'black') +
+  labs(title = 'Average Loan Amount by Grade and Loan Status',
+       x = 'Loan Grade',
+       y = 'Average Loan Amount ($)',
+       fill = 'Loan Status') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+
+ggplot(lcdf, aes(x = grade, y = loan_amnt, fill = loan_status)) + geom_boxplot()
+  
+
+
+#How does int_rate vary by loan grade?
+ggplot(lcdf, aes( int_rate, fill = grade))+geom_boxplot()
+
+
+interest_rate_stats_by_grade <- aggregate(int_rate ~ grade, data = lcdf, 
+                                           FUN = function(x) c(mean = mean(x), sd = sd(x), min = min(x), max = max(x)))
+interest_rate_stats_by_grade <- do.call(data.frame, interest_rate_stats_by_grade)
+ggplot(interest_rate_stats_by_grade, aes(x = grade, y = int_rate.mean)) +
+  geom_bar(stat = 'identity', fill = 'skyblue', color = 'black') +
+  geom_errorbar(aes(ymin = int_rate.min, ymax = int_rate.max), width = 0.2, color = 'red') +
+  labs(title = 'Average Interest Rate by Loan Grade',
+       x = 'Loan Grade',
+       y = 'Interest Rate (%)') +
+  theme_minimal()
+
+#How does int-rate vary by subgrade?
+ggplot(lcdf, aes( int_rate, fill = sub_grade))+geom_boxplot()
+
+
+interest_rate_stats_by_sub_grade <- aggregate(int_rate ~ sub_grade, data = lcdf, 
+                                               FUN = function(x) c(mean = mean(x), sd = sd(x), min = min(x), max = max(x)))
+interest_rate_stats_by_sub_grade <- do.call(data.frame, interest_rate_stats_by_sub_grade)
+ggplot(interest_rate_stats_by_sub_grade, aes(x = sub_grade, y = int_rate.mean)) +
+  geom_bar(stat = 'identity', fill = 'lightgreen', color = 'black') +
+  geom_errorbar(aes(ymin = int_rate.min, ymax = int_rate.max), width = 0.2, color = 'blue') +
+  labs(title = 'Average Interest Rate by Loan Sub-Grade',
+       x = 'Loan Sub-Grade',
+       y = 'Interest Rate (%)') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+#Does int_rate relate to loan_status?
+ggplot(lcdf, aes(x = grade, y = int_rate, fill = loan_status))+geom_boxplot()
+
+
+#How does actual-term vary by loan grade
+head(lcdf[, c("last_pymnt_d","issue_d")])
+lcdf$last_pymnt_d<-parse_date_time(lcdf$last_pymnt_d, "myd")
+head(lcdf[, c("last_pymnt_d","issue_d")])
+lcdf$actualTerm<-ifelse(lcdf$loan_status=="Fully Paid", as.duration(lcdf$issue_d  %--% lcdf$last_pymnt_d)/dyears(1), 3)
+
+ggplot(lcdf, aes(x = grade, y = actualTerm, fill = grade)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  labs(title = 'Actual Term (Years) by Loan Grade',
+       x = 'Loan Grade',
+       y = 'Actual Term (Years)') +
+  theme_minimal() +
+  scale_fill_brewer(palette = 'Set3')
+
+
+
+
+#Retun on charged-off loans
+lcdf_charged_off <- subset(lcdf, loan_status == 'Charged Off')
+lcdf_charged_off$return <- ((lcdf_charged_off$total_pymnt - lcdf_charged_off$funded_amnt) / 
+                            lcdf_charged_off$funded_amnt) * 100
+avg_return_by_grade <- aggregate(return ~ grade, data = lcdf_charged_off, FUN = mean)
+
+ggplot(lcdf_charged_off, aes(x = grade, y = return, fill = grade)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  geom_hline(yintercept = 0, linetype = 'dashed', color = 'red') +
+  labs(title = 'Return on Investment by Loan Grade for Charged-Off Loans',
+       x = 'Loan Grade',
+       y = 'Return (%)') +
+  theme_minimal() +
+  scale_fill_brewer(palette = 'Set2')
+
+# average return values with the average interest-rate on loans
+avg_values_by_grade <- aggregate(cbind(return, int_rate) ~ grade, data = lcdf_charged_off, FUN = mean)
+
+ggplot(avg_values_by_grade, aes(x = grade)) +
+  geom_bar(aes(y = return, fill = 'Return'), stat = 'identity', position = 'dodge', color = 'black') +
+  geom_bar(aes(y = int_rate, fill = 'Interest Rate'), stat = 'identity', position = 'dodge', color = 'black') +
+  scale_fill_manual(values = c('Return' = 'skyblue', 'Interest Rate' = 'orange')) +
+  labs(title = 'Comparison of Average Return and Interest Rate by Loan Grade',
+       x = 'Loan Grade',
+       y = 'Percentage (%)',
+       fill = 'Metric') +
+  theme_minimal()
+
+
+#How do returns vary by sub-grade?
+avg_return_by_sub_grade <- aggregate(return ~ sub_grade, data = lcdf_charged_off, FUN = mean)
+ggplot(avg_return_by_sub_grade, aes(x = sub_grade, y = return, fill = sub_grade)) +
+  geom_bar(stat = 'identity', color = 'black') +
+  labs(title = 'Average Return by Loan Sub-Grade',
+       x = 'Loan Sub-Grade',
+       y = 'Average Return (%)') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+# Analyze loan purpose
+purpose_summary <- aggregate(cbind(funded_amnt, int_rate) ~ purpose, data = lcdf, 
+                             FUN = function(x) c(count = length(x), mean = mean(x), sd = sd(x)))
+purpose_summary <- do.call(data.frame, purpose_summary)
+# Examine defaults by purpose
+default_rate_by_purpose <- aggregate(loan_status == 'Charged Off' ~ purpose, data = lcdf, mean)
+colnames(default_rate_by_purpose) <- c('purpose', 'default_rate')
+# Analyze loan grade distribution by purpose
+grade_distribution_by_purpose <- aggregate(grade ~ purpose, data = lcdf, function(x) 
+                                            as.list(table(x) / length(x) * 100))
+# Merge data into a summary table
+loan_purpose_summary <- merge(purpose_summary, default_rate_by_purpose, by = 'purpose')
+loan_purpose_summary <- merge(loan_purpose_summary, grade_distribution_by_purpose, by = 'purpose')
+# Visualize loan amounts by purpose
+ggplot(lcdf, aes(x = purpose, y = loan_amnt, fill = purpose)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  labs(title = 'Loan Amount Distribution by Purpose',
+       x = 'Loan Purpose',
+       y = 'Loan Amount ($)') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+# Visualize default rates by purpose
+ggplot(default_rate_by_purpose, aes(x = reorder(purpose, -default_rate), y = default_rate, fill = purpose)) +
+  geom_bar(stat = 'identity', color = 'black') +
+  labs(title = 'Default Rate by Loan Purpose',
+       x = 'Loan Purpose',
+       y = 'Default Rate (%)') +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+## Calculate the actual return for all loans
+lcdf$return <- ((lcdf$total_pymnt - lcdf$funded_amnt) / lcdf$funded_amnt) * 100
+
+
+
+######How does borrower characteristics relate to loan attributes?
+
+
+# Analyze relationships between borrower characteristics and loan attributes
+analysis_data <- lcdf %>% 
+  select(emp_length, annual_inc,loan_amnt, loan_status, grade, purpose, return)
+summary_stats <- analysis_data %>% 
+  group_by(grade) %>% 
+  summarise(
+    avg_emp_length = mean(as.numeric(gsub('[^0-9]', '', emp_length)), na.rm = TRUE),
+    avg_annual_inc = mean(annual_inc, na.rm = TRUE),
+    avg_loan_amnt = mean(loan_amnt, na.rm = TRUE),
+    avg_return = mean(return, na.rm = TRUE)
+  )
+summary_stats
+
+
+##Generate some (at least 3) new derived attributes
+
+# 1. Adjusted Debt-to-Income Ratio
+lcdf$adjusted_dti <- lcdf$dti * (lcdf$loan_amnt / lcdf$annual_inc)
+
+ggplot(lcdf, aes(x = loan_status, y = adjusted_dti, fill = loan_status)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  labs(title = 'Adjusted DTI by Loan Status',
+       x = 'Loan Status',
+       y = 'Adjusted DTI') +
+  theme_minimal() +
+  scale_fill_brewer(palette = 'Set2')
+
+
+# 2. Credit Utilization Metric
+lcdf$credit_utilization <- lcdf$revol_bal / (lcdf$annual_inc / 12)
+
+ggplot(lcdf, aes(x = loan_status, y = credit_utilization, fill = loan_status)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  labs(title = 'Credit Utilization by Loan Status',
+       x = 'Loan Status',
+       y = 'Credit Utilization') +
+  theme_minimal() +
+  scale_fill_brewer(palette = 'Set3')
+
+
+
+# 3. Payment-to-Income Ratio
+lcdf$payment_to_income <- lcdf$installment / (lcdf$annual_inc / 12)
+
+ggplot(lcdf, aes(x = loan_status, y = payment_to_income, fill = loan_status)) +
+  geom_boxplot(outlier.color = 'red', outlier.shape = 16, notch = TRUE) +
+  labs(title = 'Payment-to-Income Ratio by Loan Status',
+       x = 'Loan Status',
+       y = 'Payment-to-Income Ratio') +
+  theme_minimal() +
+  scale_fill_brewer(palette = 'Set1')
+
+
+Remove = c('adjusted_dti', 'credit_utilization', 'payment_to_income','return')
+lcdf <- lcdf %>% select(-all_of(Remove)) 
+
+```
+
+
+Number 1a
+```{r}
+
+#How many loans are fully-paid and charged-off?
+lcdf %>% group_by(loan_status) %>% tally()
+#Are there values for loan_status other than "Fully Paid' and "Charged Off"?  If so, remove them:
+lcdf <- lcdf %>% filter(loan_status == "Fully Paid" | loan_status == "Charged Off")
+
+
+
+#How does loan status vary by loan grade
+lcdf %>% group_by(loan_status, grade) %>% tally()
+#or, using table
+table(lcdf$loan_status, lcdf$grade)
+
+
+#How does number of loans, loan amount, interest rate vary by grade
+lcdf %>% group_by(grade) %>% tally()
+lcdf %>% group_by(grade) %>% summarise(sum(loan_amnt))   #and/or what is the mean loan_amnt by grade?
+lcdf %>% group_by(grade) %>% summarise(mean(int_rate))
+
+#Or plot these..
+ggplot(lcdf, aes( x = int_rate)) + geom_histogram()
+ggplot(lcdf, aes( x = loan_amnt)) + geom_histogram(aes(fill=grade))
+ggplot(lcdf, aes( x = loan_amnt)) + geom_histogram() + facet_wrap(~loan_status)
+
+
+#loan amount by grade
+ggplot(lcdf, aes( x = loan_amnt)) + geom_boxplot(aes(fill=grade))
+    #do you notice any general pattern?
+
+#How does this vary by loan_status?
+ggplot(lcdf, aes(x = grade, y = loan_amnt, fill = loan_status)) + geom_boxplot()
+  #what do you observe?
+
+#From the plots above, notice that there area some larger loans.  Does loan_status vary by grade amongst these larger loans (say >=$20K)?
+  #For this, we can use the same plot as the last line above, but filter the data to consider loans with are >= $20K
+lcdf %>% filter(loan_amnt>=20000) %>% ggplot(aes(x = grade, y = loan_amnt, fill = loan_status))+geom_boxplot()
+
+
+
+#How does int_rate vary by loan grade?
+ggplot(lcdf, aes( int_rate, fill = grade))+geom_boxplot()
+
+#Does int_rate relate to loan_status?
+ggplot(lcdf, aes( int_rate, fill = loan_status))+geom_boxplot()
+
+#Does this change with loan_status?
+ggplot(lcdf, aes(x = grade, y = int_rate, fill = loan_status))+geom_boxplot()
+
+
+
+#As discussed in the case, LendingClub assigns a grade to each loan, from A through G. How many loans are in each grade? What is the default rate in each grade? 
+#What is the average interest rate in each grade? What about the average percentage (annual) return? 
+#Do these numbers surprise you? If you had to invest in one grade only, which loans would you invest in?
+lcdf %>% group_by(grade) %>% summarise(nLoans=n(), defaults=sum(loan_status=="Charged Off"), defaultRate=defaults/nLoans, avgInterest= mean(int_rate), stdInterest=sd(int_rate), avgLoanAMt=mean(loan_amnt), avgPmnt=mean(total_pymnt))
+
+```
+
+
+Outliers - some examples on how we can examine if there are outliers based on specific variables
+Are there any outliers? And should we try to remove these ?
+```{r}
+#Look at the variable summaries -- focus on a subset of the variables of interest in your analyses & modeling
+summary(lcdf)
+lcdf %>% select_if(is.numeric) %>% summary()   #summary for only the numeric variables
+
+#Look at some boxplots 
+ggplot(lcdf, aes( x = loan_amnt)) + geom_boxplot(aes(fill=grade))
+    #any extreme outliers to remove?
+
+ggplot(lcdf, aes( x = annual_inc)) + geom_boxplot()
+ggplot(lcdf, aes( x = loan_amnt)) + geom_boxplot(aes(fill=loan_status))
+    #any extreme outliers to remove
+
+#In box-plot, examples which are outsize of [25%Q -1.5*IRQ, 75%Q + 1.5*IQR] are considered outliers
+#   However, what constitutes outliers need to be considered in the application context.  Removing too many examples can be problematic.
+
+
+
+#Consider annual_inc
+summary(lcdf$annual_inc)
+
+#How about joint income
+summary(lcdf$annual_inc_joint)
+
+#Suppose you want to consider income>$1.5M as outliers
+# How many cases?
+lcdf %>% filter(annual_inc >1500000) %>% count()
+
+#Are these high income values associated with paid-off or charged-off loans?
+ggplot(lcdf, aes( x = annual_inc)) + geom_boxplot(aes(fill=loan_status))
+   #So, looks like the very high income cases are (mostly?)for paid-off loans
+   #Should you really exclude these examples - what impact might they have on the decision-tree based models, say, to predict loan_status?
+#If you want to remove these
+#lcdf_m <- lcdf %>% filter(annual_inc <= 1500000)
+ 
+
+
+#Consider revol_util
+summary(lcdf$revol_util)
+boxplot(lcdf$revol_util)
+
+#Examples which are identified as outliers by the boxplot method
+out_ru <- boxplot(lcdf$revol_util, plot=FALSE)$out
+length(out_ru)
+out_ru  #shows the outlier values of this variable
+#to get the example-numbers (i.e. row numbers) of these
+out_ru_i <-which(lcdf$revol_util %in% out_ru)
+
+#to look at these cases
+lcdf[out_ru_i,] %>%  view()
+#to remove these examples
+#lcdf_m <- lcdf_m [-out_ru_i, ]
+
+
+```
+
+
+
+Total payments and recoveries
+Can we assume that recoveries are only for Charged_off loans?
+For charged-off loans, does total_pymnt include recoveries?
+```{r}
+lcdf %>% group_by(loan_status) %>%summarise(avgRec=mean(recoveries))
+   #shows that recoveries are there only for the Charged-Off loans
+
+
+#There are different variables for recoveries -- what is the total amount of recoveries?
+lcdf %>% group_by(loan_status) %>% summarise(avgRec=mean(recoveries), avgPmnt=mean(total_pymnt), mean(total_rec_prncp), mean(total_rec_int), mean(total_rec_late_fee))
+   #so we find that 'recoveries' has the total of recoveries on principal, on interest, and late-fees
+
+
+```
+
+
+
+
+Examine actual returns from a loan, and relation with int_rate
+(for example, can one expect a 5%/year return from a loan with 5% int_rate?)
+```{r}
+
+#do loans return an amount as may be expected from the int_rate ? 
+lcdf %>% select(loan_status, int_rate, funded_amnt, total_pymnt) %>% head()
+
+
+#calculate the annualized percentage return
+lcdf$annRet <- ((lcdf$total_pymnt -lcdf$funded_amnt)/lcdf$funded_amnt)*(12/36)*100
+
+#summarize by grade
+lcdf %>% group_by(grade) %>% summarise(nLoans=n(), defaults=sum(loan_status=="Charged Off"), avgInterest= mean(int_rate), stdInterest=sd(int_rate), avgLoanAMt=mean(loan_amnt), avgPmnt=mean(total_pymnt), avgRet=mean(annRet), stdRet=sd(annRet), minRet=min(annRet), maxRet=max(annRet))
+
+#Where do the negative numbers for minRet come from?
+lcdf %>% select(loan_status, int_rate, funded_amnt, total_pymnt, annRet) %>% filter(annRet < 0) %>% head()
+
+#are these all from 'Charged Off' loans?
+lcdf %>% select(loan_status, int_rate, funded_amnt, total_pymnt, annRet) %>% filter(annRet < 0) %>% count(loan_status)
+
+#Returns from 'Fully Paid' loans
+lcdf %>% filter( loan_status == "Fully Paid") %>% group_by(grade) %>% summarise(nLoans=n(),  avgInterest= mean(int_rate), avgLoanAmt=mean(loan_amnt), avgPmnt=mean(total_pymnt), avgRet=mean(annRet),  minRet=min(annRet), maxRet=max(annRet))
+
+
+#Similarly, returns from 'Charged Off" loans
+lcdf %>% filter( loan_status == "Charged Off") %>% group_by(grade) %>% summarise(nLoans=n(), avgInterest= mean(int_rate), avgLoanAmt=mean(loan_amnt), avgPmnt=mean(total_pymnt), avgRet=mean(annRet),  minRet=min(annRet), maxRet=max(annRet))
+
+
+```
+
+
+
+Are some loans paid back early? what proportion?  
+  - calculate the actual loan term, i.e. the time by which a loan is fully paid back
+What is the actual return from investment in a loan?
+```{r}
+
+#Term of the loan is the duration between the last-payment-date and the loan issue-date
+#   First check the format of these two columns with date values
+head(lcdf[, c("last_pymnt_d", "issue_d")])
+
+#Notice that issue_d is a date variable (of type date), while last_pymnt_d is of type character (like "Dec-2018", having month-year but no date). 
+#We need to change the character type to date:
+#     First step is to past "01-" to the character string, to get something like "01-Dec-2018", i.e. first of each month 
+lcdf$last_pymnt_d<-paste(lcdf$last_pymnt_d, "-01", sep = "")
+#     Then convert this character to a date type variable
+lcdf$last_pymnt_d<-parse_date_time(lcdf$last_pymnt_d,  "myd")
+
+#Check their format now
+head(lcdf[, c("last_pymnt_d", "issue_d")])
+
+
+#Now we can compute the duration between two dates using 
+#      as.duration(lcdf$issue_d  %--% lcdf$last_pymnt_d))
+#   This will return the duration in seconds -- try  
+#          x<- as.duration(lcdf$issue_d  %--% lcdf$last_pymnt_d)
+#          head(x)
+#     To convert it to duration in weeks, we can use 
+#          x<- as.duration(lcdf$issue_d  %--% lcdf$last_pymnt_d)/dweeks(1)
+#      Or to get the duration in years
+#          x<- as.duration(lcdf$issue_d  %--% lcdf$last_pymnt_d)/dyears(1)
+#
+#Another issue to consider: what about those loans which are charged-off? These are not paid back fully by the end of the 3-year term, so the duration as calculated above will not give the accurate value for the actual-term. For these loans, we can set the actual-term at 3.
+
+
+
+#Then, considering this actual term, the actual annual return is
+lcdf$actualReturn <- ifelse(lcdf$actualTerm>0, ((lcdf$total_pymnt -lcdf$funded_amnt)/lcdf$funded_amnt)*(1/lcdf$actualTerm)*100, 0)
+
+#take a look these variables for the first few rows of data 
+lcdf %>% select(loan_status, int_rate, funded_amnt, total_pymnt, annRet, actualTerm, actualReturn) %>%  head()
+   # CHECK that this is accurate and does what you are looking for
+
+```
+
+
+Some further analyses--exploration related to returns and performance
+```{r}
+
+#For cost-based performance, we may want to see the average interest rate, and the average of proportion of loan amount paid back, grouped by loan_status
+lcdf%>% group_by(loan_status) %>% summarise(  intRate=mean(int_rate), totRet=mean((total_pymnt-funded_amnt)/funded_amnt)  )
+# Notice that the totRet on Charged Off loans is negative, so, for every dollar invested, there is a loss (how much?).
+
+#does this vary by loan_type?  Here, we are expressing totRet as a % value
+lcdf%>% group_by(loan_status, grade) %>% summarise(  intRate=mean(int_rate),    
+                                              totRet=mean((total_pymnt-funded_amnt)/funded_amnt)*100 )
+     #Is this in line with what you'd expect (from loan grade info)?
+
+
+
+# For Fully Paid loans, is the average value of totRet what you'd expect, considering the average value for intRate?
+# Consider - if a loan were to be paid back over the full 3-year period, what would you expect for average expected total-return? And how does this compare with average of the actual totRet?
+#(the totRet seems less than what may be  expected from intRate -- is this because many loans are paid back earlier).
+
+#This summary can also help understand:
+lcdf%>% group_by(loan_status) %>% summarise(  intRate=mean(int_rate), totRet=mean((total_pymnt-funded_amnt)/funded_amnt), avgActRet=mean(actualReturn)  )
+
+#Another summary - by loan status and loan grade
+lcdf%>% group_by(loan_status, grade) %>% summarise(  intRate=mean(int_rate),   
+                                                  totRet=mean((total_pymnt-funded_amnt)/funded_amnt),
+                                                  avgActRet=mean(actualReturn),avgActTerm=mean(actualTerm)  )
+
+#you may like to look at some of these variables
+lcdf %>% select(loan_status, loan_amnt, funded_amnt, total_pymnt, int_rate, actualTerm, actualReturn ) %>% view()
+
+#some more summaries
+lcdf %>% group_by(grade) %>% summarise(nLoans=n(), defaults=sum(loan_status=="Charged Off"), defaultRate=defaults/nLoans, avgInterest= mean(int_rate), avgLoanAmt=mean(loan_amnt), avgRet=mean(annRet), avgActualRet=mean(actualReturn)*100, avgActualTerm=mean(actualTerm),  minActualRet=min(actualReturn)*100, maxActualRet=max(actualReturn)*100)
+
+lcdf %>% group_by(loan_status) %>% summarise(nLoans=n(), avgInterest= mean(int_rate), avgLoanAmt=mean(loan_amnt), avgRet=mean(annRet), avgActualRet=mean(actualReturn)*100, avgActualTerm=mean(actualTerm),  minActualRet=min(actualReturn)*100, maxActualRet=max(actualReturn)*100)
+
+
+```
+
+
+
+
+Further data exploration -- look into emp_length
+```{r}
+#what are the different values, and how many examples are there for each value
+lcdf %>% group_by(emp_length) %>% tally()
+
+#convert emp_length to factor -- with factor levels ordered in a meaningful way
+lcdf$emp_length <- factor(lcdf$emp_length, levels=c("n/a", "< 1 year","1 year","2 years", "3 years" ,  "4 years",   "5 years",   "6 years",   "7 years" ,  "8 years", "9 years", "10+ years" ))
+# Note: we could have converted to factor by simply using 
+#    x<-as.factor(lcdf$emp_length), 
+#   but here the factor levels would be randomly arranged
+
+
+#Do defaults vary by emp_length?
+table(lcdf$loan_status, lcdf$emp_length)
+  #this shows nujmber of Charged Off and Full Paid loans for different emp_length
+#Can we calculate the proportion of Ca=harged Off loans for weach level of emp_length?
+cc=table(lcdf$loan_status, lcdf$emp_length)
+cc[1,]/(cc[1,] + cc[2,])   #dividing each element of the first row in cc by the sum of first and second row elements.
+
+
+#Does the loan-grade assigned by LC vary by emp_length?
+table(lcdf$grade, lcdf$emp_length)
+
+
+#some addl summary by emp_length
+lcdf %>% group_by(emp_length) %>% summarise(nLoans=n(), defaults=sum(loan_status=="Charged Off"), defaultRate=defaults/nLoans, avgIntRate=mean(int_rate),  avgLoanAmt=mean(loan_amnt),  avgActRet = mean(actualReturn), avgActTerm=mean(actualTerm))
+
+```
+
+
+Further data exploration -- look into loan purpose
+```{r}
+# Does default rate, int-rate, etc vary by loan purpose
+lcdf %>% group_by(purpose) %>% tally()
+lcdf %>% group_by(purpose) %>% summarise(nLoans=n(), defaults=sum(loan_status=="Charged Off"), defaultRate=defaults/nLoans, avgIntRate=mean(int_rate),  avgLoanAmt=mean(loan_amnt),  avgActRet = mean(actualReturn), avgActTerm=mean(actualTerm))
+
+#Does loan-grade vary by purpose?
+table(lcdf$purpose, lcdf$grade)
+
+
+#some other detailed analyses
+#Does loan purpose relate to emp_length?
+table(lcdf$purpose, lcdf$emp_length)
+
+#do those with home-improvement loans own or rent a home?
+table(lcdf$home_ownership, lcdf$purpose)
+
+
+
+lcdf %>% group_by(purpose) %>% tally()
+#some of category levels have very few examples 
+#    do you want to recode such categories with very few cases to "other"
+lcdf$purpose <- fct_recode(lcdf$purpose, other="wedding", other="educational", other="renewable_energy")
+
+
+#Plot of loan amount by purpose
+boxplot(lcdf$loan_amnt ~ lcdf$purpose)
+
+```
+
+
+
+
+Some derived attributes
+```{r}
+#Derived attribute: proportion of satisfactory bankcard accounts 
+lcdf$propSatisBankcardAccts <- ifelse(lcdf$num_bc_tl>0, lcdf$num_bc_sats/lcdf$num_bc_tl, 0)
+ 
+#Another one - lets calculate the length of borrower's history with LC
+#  i.e time between earliest_cr_line and issue_d
+#  Look at these variables - you will notice that earliest_cr_line is read in as 'chr', we first convert it to date
+#      and then subtract the two dates
+lcdf$earliest_cr_line<-paste(lcdf$earliest_cr_line, "-01", sep = "")
+lcdf$earliest_cr_line<-parse_date_time(lcdf$earliest_cr_line, "myd")
+
+#lcdf$issue_d<-parse_date_time(lcdf$issue_d, "myd") <<---we should not do this, since issue_d is already a date type variable
+ 
+# we can use the lubridate functions to precisely handle date-times durations
+lcdf$borrHistory <- as.duration(lcdf$earliest_cr_line %--% lcdf$issue_d  ) / dyears(1)
+
+
+#Another new attribute: ratio of openAccounts to totalAccounts
+#lcdf$openAccRatio <- 
+
+
+
+#does LC-assigned loan grade vary by borrHistory?
+lcdf %>% group_by(grade) %>% summarise(avgBorrHist=mean(borrHistory))
+
+
+#some additional analyses.......(your own)
+
+```
+
+
+Converting character variables
+```{r}
+#Take a look at the variables in the data-set -- are there any variable type changes you want to consider?
+glimpse(lcdf)
+
+#  notice that there are a few character type variables - grade, sub_grade, verification_status,....
+#   We can  convert all of these to factor
+lcdf <- lcdf %>% mutate_if(is.character, as.factor)
+
+```
+
+
+
+
+Number 2b: Leakage variables
+```{r}
+
+#Drop some variable/columns which are not useful or which we will not use in developing predictive models
+#Also drop variables those which will cause 'leakage'  <--IMPORTANT 
+
+#Identify the variables you want to remove
+varsToRemove = c('funded_amnt_inv', 'term', 'emp_title', 'pymnt_plan', 'earliest_cr_line', 'title', 'zip_code', 'addr_state', 'out_prncp', 'out_prncp_inv', 'total_pymnt_inv', 'total_rec_prncp', 'total_rec_int', 'total_rec_late_fee', 'recoveries', 'collection_recovery_fee', 'last_credit_pull_d', 'policy_code', 'disbursement_method', 'debt_settlement_flag',  'settlement_term', 'application_type')
+
+
+ 
+#Other variables to drop -- the list above is not complete
+# What about variables like last_pymnt_d, last_pymnt_amnt, next_pymnt_d, deferral_term, payment_plan_start_date, debt_settlement_flag_date  - should you remove these too?
+
+#Drop them from the lcdf data-frame
+lcdf <- lcdf %>% select(-all_of(varsToRemove))  
+
+
+#Drop all the variables with names starting with "hardship" -- can cause leakage?
+lcdf <- lcdf %>% select(-starts_with("hardship"))
+
+#similarly, all variable starting with "settlement"
+lcdf <- lcdf %>% select(-starts_with("settlement"))
+
+#Are there some additional variables to drop -- which we will not use in following analyses
+varsToRemove2 <- c("last_pymnt_d", "last_pymnt_amnt", "issue_d")
+lcdf <- lcdf %>% select(-all_of(varsToRemove2))
+  
+names(lcdf)
+```
+
+
+
+
+Number 2b:Missing values
+```{r}
+
+#We can use the is.na(x) function to check for 'NA' or missing values in variable x
+#   Returns a vector of True/False values based on whether the corresponding values in x is NA
+
+
+#Drop variables with all empty values
+lcdf <- lcdf %>% select_if(function(x){ ! all(is.na(x)) } )
+      #  all(is.na(x)) will evaluate to True if all the values in x are missing.
+      #  So we keep those variables x which do NOT have all values missing
+ # How many variables were dropped ?  You can check by dim(lcdf), before and after this command 
+
+
+#Of the columns remaining, names of columns with missing values
+names(lcdf)[colSums(is.na(lcdf)) > 0]
+    # colSums ( is.na( lcdf ) ) returns the total number of True (i.e. NA) values in each column of lcdf
+    # We then get the names of these columns
+
+
+#missing value proportions in each column
+colMeans(is.na(lcdf))
+missing_props <- colMeans(is.na(lcdf))
+missing_table <- data.frame(
+  Variable = names(missing_props),
+  Missing_Proportion = missing_props
+)
+missing_table <- missing_table[order(-missing_table$Missing_Proportion), ]
+print(missing_table)
+# or, get only those columns where there are missing values
+colMeans(is.na(lcdf))[colMeans(is.na(lcdf))>0]
+
+
+#Are there same number of missing values in a set of attributes, and might there be a reason for this?
+#How does this inform your handling of missing values?
+
+
+#Consider open_acc_6m, which has 97% missing
+summary(as.factor(lcdf$open_acc_6m))    # shows the counts by different values of the variable
+table(lcdf$open_acc_6m)  #gives the same output  -- but it does not show the NAs
+
+# We can replace missing values in a variable with
+#      replace_na( variable, "value for missing")    
+sum(is.na(lcdf$open_acc_6m))
+lcdf$open_acc_6m <- as.character(lcdf$open_acc_6m)
+table( replace_na( lcdf$open_acc_6m, "missing") )   # shows the 'missing' values
+table( lcdf$loan_status, replace_na( lcdf$open_acc_6m, "missing") ) # shows counts by loan_status at different values of the variable
+
+#to get a bar-plot of these
+cc<-table( lcdf$loan_status, replace_na( lcdf$open_acc_6m, "missing") )
+barplot(cc, col=c("darkblue","red"),legend = rownames(cc))  # here, one bar dominates others
+# For a better display, we can get proportion of ChargedOff as cc[1,]/(cc[2,]+cc[1,]).  Then to plot this..
+barplot(cc[1,]/(cc[2,]+cc[1,]),  ylab = "prop ChargedOff", main="Prop ChargedOff by open_acc_6m")
+
+
+
+
+#Consider the "mths_since_" variables -- what do they represent (see data dictionary)
+# Are the missing values here due to zeros; or due to no known values in the period considered (then the actual value would be larger than the max value)? Or are are they really unknown?
+
+#  Variable mths_since_last_record has more than 80% values missing
+lcdf$mths_since_last_record <- as.character(lcdf$mths_since_last_record)
+cc<-table( lcdf$loan_status, replace_na( lcdf$mths_since_last_record, "missing") )
+cc[1,]/(cc[2,]+cc[1,])
+# Is the proportion of defaults for 'missing' similar to the large/small values of the variable?  If they do not relate well to larger values, than we should not assume that missings are for values higher than the max.
+#If a very large proportion of values is really unknown, may be better to not include this variable in a model?
+
+
+
+#For mths_since_last_delinq, which has around 50% values missing 
+lcdf$mths_since_last_delinq <- as.character(lcdf$mths_since_last_delinq)
+cc<-table( lcdf$loan_status, replace_na( lcdf$mths_since_last_delinq, "missing") )
+cc[1,]/(cc[2,]+cc[1,])
+
+   #Here, is there a pattern of higher defaults for examples which have more recent delinquencies?  If so, we should try to retain this variable, and find a way to reasonably handle the missing values.
+lcdf$delinq_status <- ifelse(is.na(lcdf$mths_since_last_delinq), "No Delinquency", "Had Delinquency")  
+table_delinq <- table(lcdf$delinq_status, lcdf$loan_status)
+print(table_delinq)
+default_rate_by_delinq <- prop.table(table_delinq, margin = 1)
+print(default_rate_by_delinq)
+
+lcdf$mths_since_last_delinq[lcdf$mths_since_last_delinq == "missing"]= NA
+lcdf$mths_since_last_delinq <- as.numeric(lcdf$mths_since_last_delinq)
+lcdf$mths_since_last_delinq <- ifelse(is.na(lcdf$mths_since_last_delinq), 999, lcdf$mths_since_last_delinq)
+
+#For mths_since_recent_inq, which has around 10% values missing
+lcdf$mths_since_recent_inq <- as.character(lcdf$mths_since_recent_inq)
+cc<-table( lcdf$loan_status, replace_na( lcdf$mths_since_recent_inq, "missing") )
+cc[1,]/(cc[2,]+cc[1,])
+    # Here,the proportion of defaults for missing values seem similar to the larger values of the variable -- so, may be replace the missings with a large value ?
+
+
+
+
+#Suppose you decide to remove variables which have more than 60% missing values
+nm<-names(lcdf)[colMeans(is.na(lcdf))>0.6]
+lcdf <- lcdf %>% select(-all_of(nm), -"total_pymnt")
+
+
+
+
+#Impute missing values for remaining variables which have missing values
+# - first get the columns with missing values
+colMeans(is.na(lcdf))[colMeans(is.na(lcdf))>0]
+
+#summary of data in these columns
+nm<- names(lcdf)[colSums(is.na(lcdf))>0]
+summary(lcdf[, nm])
+
+
+#Question -- considering DT based models, can we retain variables which have some (not too many) missing values ?
+
+
+#Suppose we want to replace the missing values for variables where there are a larger number of missings, and where this seems reasonable (what is your logic for this?)
+
+#For bc_open_to_buy, suppose we want to replace the missing values by the median
+#  -- we will try this out and put results in a temporary dataset lcx, with the attributes that have missing values
+lcx <-lcdf[, c(nm)]
+lcx<- lcx %>% replace_na(list(bc_open_to_buy=median(lcx$bc_open_to_buy, na.rm=TRUE)))
+
+
+#Similarly for the other variables
+#After trying this out on the temporary dataframe lcx, if we are sure this is what we want, we can now  replace the missing values on the lcdf dataset
+
+#lcdf<- lcdf %>% replace_na(list(mths_since_last_delinq=-500, bc_open_to_buy=median(lcdf$bc_open_to_buy, na.rm=TRUE), mo_sin_old_il_acct=1000, mths_since_recent_bc=1000, mths_since_recent_inq=50, num_tl_120dpd_2m = median(lcdf$num_tl_120dpd_2m, na.rm=TRUE),percent_bc_gt_75 = median(lcdf$percent_bc_gt_75, na.rm=TRUE), bc_util=median(lcdf$bc_util, na.rm=TRUE) ))
+  # Check that the replacement values for missings are reasonable - we should be able to explain why we are doing this.
+
+
+#Has this addressed all missing values?
+colMeans(is.na(lcdf))[colMeans(is.na(lcdf))>0]
+  # we did not replace missings for all attributes - will this be ok for DT based models which we will develop in the next phase?
+
+
+#Variables with missing values
+nm<-names(lcdf)[colMeans(is.na(lcdf))>0]
+glimpse(lcdf %>% select(nm))
+   #we notice that these are all numeric variables  -- replace by the median values?
+
+#To replace the few missing values in a column by the column median values
+# -- Try this before making changes in lcdf 
+lcx <- lcdf  #copy to lcx
+lcx<- lcx %>% mutate_if(is.numeric,  ~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x))
+     # if any column has  missing values, replace with median value in that column
+
+#If this works, do the same in lcdf
+#lcdf<- lcdf %>% mutate_if(is.numeric,  ~ifelse(is.na(.x), median(.x, na.rm = TRUE), .x))
+
+
+dim(lcdf)  #how many variables left 
+names(lcdf)
+
+```
+
+
+
+
+
+Univariate analyses - which variables are individually predictive of the outcome ?
+Considering a single variable model to predict loan_status, what could be a measure of performance?  AUC? 
+For a univariate model with a variable, say, x1, what should we consider as the model 'score' for predicting loan_status? 
+Can we take the values of x1 as the score for a model y_hat=f(x1) ? 
+
+Number 3
+```{r}
+
+#Q3 Univaraite anaylsis
+#Load necessary library
+library(pROC)  # Required for AUC calculations
+
+#Compute AUC for single variable
+auc(response=lcdf$loan_status, predictor=lcdf$loan_amnt)
+
+#AUC for all numeric varaibles
+aucsNum <- sapply(lcdf %>% select_if(is.numeric), auc, response=lcdf$loan_status)
+
+
+#AUC for all numeric and factor variables
+aucAll <- sapply(lcdf %>% mutate_if(is.factor, as.numeric) %>% select_if(is.numeric), auc, response=lcdf$loan_status)
+
+#Identify strong predictors
+strong_predictors <- aucAll[aucAll > 0.5]
+print(strong_predictors)
+
+#Display them in a table
+library(broom)
+tidy(aucAll) %>% arrange(desc(aucAll)) %>% print()
+
+# View only variables with extremely high AUC (>0.9) (possible data leakage)
+potential_leakage_vars <- tidy(aucAll[aucAll > 0.9])
+print(potential_leakage_vars)
+
+# see if u need to CHANGE THUS !!!!
+
+#Save these varaibles for performance evaluation
+evaluation_data <- lcdf %>% select(loan_status, actualTerm,actualReturn)
+
+
+```
+
+
+
+
+
+Number 4a
+```{r}
+#Q4a Split the data into training and test sets
+varsOmit <- c('actualTerm', 'actualReturn', 'annRet')
+TRNPROP <- 0.5  # 50% training, 50% validation
+
+set.seed(123)  # Ensures reproducibility
+
+# Get number of rows
+nr <- nrow(lcdf)
+
+# Create training indices (random sample)
+trnIndex <- sample(1:nr, size = round(TRNPROP * nr), replace = FALSE)
+
+# Create training and validation sets
+lcdfTrn <- lcdf[trnIndex, ]   # Training set
+lcdfTst <- lcdf[-trnIndex, ]  # Validation set
+
+# Check dimensions to confirm correct split
+dim(lcdfTrn)
+dim(lcdfTst)
+
+glimpse(lcdf)
+
+library(caret)
+
+#4b Train a decision tree model
+library(rpart)
+library(rpart.plot)
+
+
+glimpse(lcdfTrn)
+
+#lcdfTrn$loan_status <- as.factor(lcdfTrn$loan_status)
+
+
+
+lcDT1 <- rpart(loan_status ~ ., 
+               data = lcdfTrn %>% select(-all_of(varsOmit)),  
+               method = "class", 
+               parms = list(split = "information"), 
+               control = rpart.control(minsplit = 10, cp = 0.0001))
+
+#Print the tree
+printcp(lcDT1)
+
+#Variable importance 
+lcDT1$variable.importance
+
+
+#Prune tree, identify optimal Cp value
+printcp(lcDT1)
+#Set optimal cp value
+min_xerror <- min(lcDT1$cptable[, "xerror"])
+
+xerror_threshold <- min_xerror + lcDT1$cptable[which.min(lcDT1$cptable[, "xerror"]), "xstd"]
+optimal_cp_index <- which(lcDT1$cptable[, "xerror"] <= xerror_threshold)[1]  # First CP within threshold
+optimal_cp <- lcDT1$cptable[optimal_cp_index, "CP"]
+
+print(optimal_cp)
+
+#Optimal cp value after comparing many 
+lcDT1_pruned <- prune(lcDT1, cp = 0.0004)
+printcp(lcDT1_pruned)
+
+#Display pruned tree
+rpart.plot(lcDT1_pruned, main = "Pruned Decision Tree")
+pred_lcDT1 <- factor(lcDT1_pruned, levels = c("Fully Paid", "Charged Off"))
+
+lcdfTst$loan_status <- factor(lcdfTst$loan_status, levels = c("Fully Paid", "Charged Off"))
+pred_lcDT1 <- factor(pred_lcDT1, levels = c("Fully Paid", "Charged Off"))
+
+```
+
+Number 4b
+```{r}
+#Make predictions on test set
+pred_lcDT1 <- predict(lcDT1_pruned, newdata = lcdfTst, type = "class")
+
+#Generate the Confusion Matrix
+library(caret)
+conf_matrix <- confusionMatrix(pred_lcDT1, lcdfTst$loan_status)
+print(conf_matrix)
+
+library(pROC)
+
+# Convert predictions to probabilities for ROC analysis
+pred_probs <- predict(lcDT1_pruned, newdata = lcdfTst, type = "prob")[, "Charged Off"]
+
+# Generate ROC Curve
+roc_curve <- roc(lcdfTst$loan_status, pred_probs, levels = c("Fully Paid", "Charged Off"))
+plot(roc_curve, col = "blue", main = "ROC Curve for Decision Tree Model")
+
+# Compute AUC
+auc_value <- auc(roc_curve)
+print(paste("AUC:", auc_value))
+
+
+# Compute Deciles for Lift Chart
+lcdfTst$predicted_prob <- pred_probs
+lcdfTst$decile <- ntile(lcdfTst$predicted_prob, 10)  # Splitting into 10 deciles
+
+# Compute the lift for each decile
+lift_table <- lcdfTst %>%
+  group_by(decile) %>%
+  summarize(total = n(),
+            charged_off_count = sum(loan_status == "Charged Off"),
+            lift = charged_off_count / mean(charged_off_count))  # Compute Lift
+
+print(lift_table)
+
+```
+
+Number 5
+```{r}
+#Q5 
+
+# Train different Decision Tree models with varying parameters
+# Trying different values of minsplit to observe impact on performance
+
+lcDT1_minsplit50 <- rpart(loan_status ~ ., 
+                          data = lcdfTrn%>% select(-all_of(varsOmit)), 
+                          method = "class",
+                          parms = list(split = "information"),
+                          control = rpart.control(minsplit = 50, cp = 0.004))
+
+lcDT1_minsplit100 <- rpart(loan_status ~ ., 
+                           data = lcdfTrn%>% select(-all_of(varsOmit)), 
+                           method = "class",
+                           parms = list(split = "information"),
+                           control = rpart.control(minsplit = 100, cp = 0.004))
+
+# Print complexity parameter (cp) table for both models
+printcp(lcDT1_minsplit50)
+printcp(lcDT1_minsplit100)
+
+
+# Try different values of minsplit and cp to allow splits
+lcDT1_minsplit10 <- rpart(loan_status ~ ., 
+                          data = lcdfTrn%>% select(-all_of(varsOmit)), 
+                          method = "class",
+                          parms = list(split = "information"),
+                          control = rpart.control(minsplit = 10, cp = 0.0005)) 
+
+lcDT1_minsplit20 <- rpart(loan_status ~ ., 
+                          data = lcdfTrn%>% select(-all_of(varsOmit)), 
+                          method = "class",
+                          parms = list(split = "information"),
+                          control = rpart.control(minsplit = 20, cp = 0.0005))
+
+# Print complexity parameters
+printcp(lcDT1_minsplit10)
+printcp(lcDT1_minsplit20)
+
+# Make predictions on the training set
+pred_train_10 <- predict(lcDT1_minsplit10, newdata = lcdfTrn, type = "class")
+pred_train_20 <- predict(lcDT1_minsplit20, newdata = lcdfTrn, type = "class")
+
+# Make predictions on the validation set
+pred_valid_10 <- predict(lcDT1_minsplit10, newdata = lcdfTst, type = "class")
+pred_valid_20 <- predict(lcDT1_minsplit20, newdata = lcdfTst, type = "class")
+
+# Evaluate performance using confusion matrix and related measures
+confusionMatrix(pred_train_10, lcdfTrn$loan_status)
+confusionMatrix(pred_train_20, lcdfTrn$loan_status)
+
+
+# Identify the best model using validation performance and complexity
+# Check error rates and complexity parameters
+printcp(lcDT1_pruned)
+
+# Examine variable importance in the pruned decision tree
+importance_vars <- lcDT1_pruned$variable.importance
+print(importance_vars)
+
+# Compare variable importance to findings from Question 3
+
+# --- Visualization of the best tree model ---
+rpart.plot(lcDT1_pruned, main = "Best Pruned Decision Tree", type = 4, extra = 104)
+
+# --- Tabulate Model Performance (Train vs Validation) ---
+results_table <- data.frame(
+  Model = c("Decision Tree (minsplit=10)", "Decision Tree (minsplit=20)"),
+  Train_Accuracy = c(
+    sum(pred_train_10 == lcdfTrn$loan_status) / length(lcdfTrn$loan_status),
+    sum(pred_train_20 == lcdfTrn$loan_status) / length(lcdfTrn$loan_status)
+  ),
+  Validation_Accuracy = c(
+    sum(pred_valid_10 == lcdfTst$loan_status) / length(lcdfTst$loan_status),
+    sum(pred_valid_20 == lcdfTst$loan_status) / length(lcdfTst$loan_status)
+  )
+)
+
+print(results_table)
+
+# --- Compute ROC and AUC ---
+roc_curve <- roc(lcdfTst$loan_status, as.numeric(pred_valid_20))  
+plot(roc_curve, col="blue", main="ROC Curve for Best Decision Tree Model")
+auc_value <- auc(roc_curve)
+print(paste("AUC:", auc_value))
+
+# Predict on the validation set using your best pruned decision tree model (assumed to be lcDT1_pruned)
+pred_valid_dt <- predict(lcDT1_pruned, newdata = lcdfTst, type = "class")
+
+# Convert predictions and actual labels to factors with consistent naming.
+# Adjust the levels if your data uses slightly different labels.
+pred_labels_dt <- factor(pred_valid_dt, levels = c("Charged Off", "Fully Paid"), 
+                           labels = c("ChargedOff", "Fully Paid"))
+actual_labels_dt <- factor(lcdfTst$loan_status, levels = c("Charged Off", "Fully Paid"), 
+                           labels = c("ChargedOff", "Fully Paid"))
+
+# Create the confusion matrix.
+cm_dt <- table(Predicted = pred_labels_dt, Actual = actual_labels_dt)
+print("Decision Tree Confusion Matrix:")
+print(cm_dt)
+
+# Define the profit/loss matrix (incremental relative to investing in CDs):
+# - For loans predicted as "ChargedOff": you invest in CDs, so incremental profit = $0.
+# - For loans predicted as "Fully Paid":
+#      * If the loan is actually Fully Paid, you earn an extra $6 (over the CD's $6).
+#      * If the loan is actually Charged Off, you lose an extra $6 relative to CDs.
+profit_matrix_dt <- matrix(c(0,   0,   # Row for Predicted "ChargedOff": [ChargedOff, Fully Paid]
+                             -6,   6),  # Row for Predicted "Fully Paid": [ChargedOff, Fully Paid]
+                           nrow = 2, byrow = TRUE,
+                           dimnames = list(Predicted = c("ChargedOff", "Fully Paid"),
+                                           Actual = c("ChargedOff", "Fully Paid")))
+print("Profit/Loss Matrix (Incremental relative to CDs):")
+print(profit_matrix_dt)
+
+# Calculate the overall incremental profit by multiplying the confusion matrix by the profit matrix and summing.
+total_incremental_profit_dt <- sum(cm_dt * profit_matrix_dt)
+sprintf("Total Incremental Profit (Decision Tree): $%.2f", total_incremental_profit_dt)
+```
+
+
+
+
+
+
+Number 6: Random forest models
+```{r}
+library(ranger)
+library(pROC)
+rfModel1 <- ranger(loan_status ~., data=lcdfTrn %>%  select(-all_of(varsOmit)), num.trees = 200, importance='permutation', probability = TRUE)
+
+#variable importance
+var_importance <- sort(rfModel1$variable.importance, decreasing = TRUE)
+print(var_importance)
+
+#Get the predictions -- look into the returned object
+scoreTrn <- predict(rfModel1,lcdfTrn)
+head(scoreTrn$predictions)
+
+#classification performance , at specific threshold 
+table(pred = scoreTrn$predictions[, "Fully Paid"] > 0.7, actual=lcdfTrn$loan_status)
+
+scoreTst <- predict(rfModel1,lcdfTst)
+table(pred = scoreTst$predictions[, "Fully Paid"] > 0.7, actual=lcdfTst$loan_status)
+
+library(ROCR)
+
+#ROC curve, AUC
+pred=prediction(scoreTst$predictions[, "Fully Paid"], lcdfTst$loan_status, label.ordering = c("Charged Off","Fully Paid" ))  #ROC curve
+aucPerf <-performance(pred, "tpr", "fpr")
+plot(aucPerf)
+abline(a=0, b= 1)
+
+#AUC value
+aucPerf=performance(pred, "auc")
+sprintf("AUC: %f", aucPerf@y.values)
+
+
+
+rfModel2 <- ranger(loan_status ~., data=lcdfTrn %>%  select(-all_of(varsOmit)),
+                   num.trees =500, probability = TRUE, min.node.size = 50, max.depth = 15, importance = "permutation")
+
+
+#variable importance
+var_importance2 <- sort(rfModel2$variable.importance, decreasing = TRUE)
+print(var_importance2)
+
+#Get the predictions -- look into the returned object
+scoreTrn2 <- predict(rfModel2,lcdfTrn)
+head(scoreTrn2$predictions)
+
+#classification performance , at specific threshold 
+table(pred = scoreTrn2$predictions[, "Fully Paid"] > 0.7, actual=lcdfTrn$loan_status)
+
+scoreTst2 <- predict(rfModel2,lcdfTst)
+table(pred = scoreTst2$predictions[, "Fully Paid"] > 0.7, actual=lcdfTst$loan_status)
+
+
+#ROC curve, AUC
+pred2=prediction(scoreTst2$predictions[, "Fully Paid"], lcdfTst$loan_status, label.ordering = c("Charged Off","Fully Paid" ))  #ROC curve
+aucPerf2 <-performance(pred2, "tpr", "fpr")
+plot(aucPerf2)
+abline(a=0, b= 1)
+
+#AUC value
+aucPerf2=performance(pred, "auc")
+sprintf("AUC: %f", aucPerf2@y.values)
+
+
+rfModel3 <- ranger(loan_status ~., data=lcdfTrn %>%  select(-all_of(varsOmit)), num.trees =700, probability = TRUE, min.node.size = 30, max.depth = 17,importance = "permutation")
+
+#variable importance
+var_importance3 <- sort(rfModel3$variable.importance, decreasing = TRUE)
+print(var_importance3)
+#Get the predictions -- look into the returned object
+scoreTrn3 <- predict(rfModel3,lcdfTrn)
+head(scoreTrn3$predictions)
+
+#classification performance , at specific threshold 
+table(pred = scoreTrn3$predictions[, "Fully Paid"] > 0.7, actual=lcdfTrn$loan_status)
+
+scoreTst3 <- predict(rfModel2,lcdfTst)
+table(pred = scoreTst3$predictions[, "Fully Paid"] > 0.7, actual=lcdfTst$loan_status)
+
+
+#ROC curve, AUC
+pred3=prediction(scoreTst2$predictions[, "Fully Paid"], lcdfTst$loan_status, label.ordering = c("Charged Off","Fully Paid" ))  #ROC curve
+aucPerf3 <-performance(pred, "tpr", "fpr")
+plot(aucPerf3)
+abline(a=0, b= 1)
+
+#AUC value
+aucPerf3=performance(pred3, "auc")
+sprintf("AUC: %f", aucPerf3@y.values)
+
+
+```
+
+Number 6: XBG Boosted Model
+```{r}
+library(xgboost)
+library(caret)
+lcdf<- lcdf %>% mutate(across(everything(), as.numeric))
+colcdf <- ifelse(lcdf$loan_status == 2, 1, 0)
+
+dxlcdf <- lcdf %>% select(-loan_status)
+
+dxlcdfTrn <- dxlcdf[trnIndex,]
+colcdfTrn <- colcdf[trnIndex]
+dxlcdfTst <- dxlcdf[-trnIndex,]
+colcdfTst <- colcdf[-trnIndex]
+
+dTrn <- xgb.DMatrix(
+  data = as.matrix(subset(dxlcdfTrn, select = -c(actualTerm, actualReturn))),
+  label = colcdfTrn
+)
+dTst <- xgb.DMatrix(
+  data = as.matrix(subset(dxlcdfTst, select = -c(actualTerm, actualReturn))),
+  label = colcdfTst
+)
+#dTrn <- xgb.DMatrix( subset(dxlcdfTrn, select = -c( actualTerm, actualReturn)), label=colcdfTrn)
+#dTst <- xgb.DMatrix( subset( dxlcdfTst, select = -c( actualTerm, actualReturn)), label=colcdfTst)
+
+
+xgbWatchlist <- list(train = dTrn, eval = dTst)
+xgbParam <- list (
+ max_depth = 4, eta = 0.01,
+ objective = "binary:logistic",
+ eval_metric="error", eval_metric = "auc", gamma=1,lambda=1)
+xgb_lsM1 <- xgb.train( xgbParam, dTrn, nrounds = 500,
+ xgbWatchlist, early_stopping_rounds = 10 )
+
+pred_test <- predict(xgb_lsM1, dTst)
+roc_obj <- roc(colcdfTst, pred_test)
+plot(roc_obj, main = "ROC Curve for XGBoost Model")
+auc_value <- auc(roc_obj)
+print(auc_value)
+pred_labels <- ifelse(pred_test > 0.5, 1, 0)
+confusionMatrix(as.factor(pred_labels), as.factor(colcdfTst))
+
+pred_train <- predict(xgb_lsM1, dTrn)
+roc_obj_train <- roc(colcdfTrn, pred_train)
+plot(roc_obj_train, main = "ROC Curve for XGBoost Model - Training Set")
+auc_train <- auc(roc_obj_train)
+print(auc_train)
+
+table(colcdfTrn)
+table(colcdfTst)
+
+train_features <- subset(dxlcdfTrn, select = -c(actualTerm, actualReturn))
+importance_df <- xgb.importance(feature_names = colnames(train_features), model = xgb_lsM1)
+xgb.plot.importance(importance_df, main = "XGBoost Variable Importance")
+
+#the number of trees actually used
+print(xgb_lsM1$best_iteration)
+```
+
+
+Number 7
+```{r}
+
+threshold <- 0.5  
+
+
+pred_labels <- ifelse(pred_test > threshold, 1, 0)
+
+pred_labels <- factor(pred_labels, levels = c(0, 1), labels = c("ChargedOff", "Fully Paid"))
+actual_labels <- factor(colcdfTst, levels = c(0, 1), labels = c("ChargedOff", "Fully Paid"))
+
+
+cm <- table(Predicted = pred_labels, Actual = actual_labels)
+print(cm)
+
+profit_matrix <- matrix(c(0, 0,   # Row for Predicted "ChargedOff": [ChargedOff, Fully Paid]
+                          -6, 6),  # Row for Predicted "Fully Paid": [ChargedOff, Fully Paid]
+                        nrow = 2, byrow = TRUE,
+                        dimnames = list(Predicted = c("ChargedOff", "Fully Paid"),
+                                        Actual = c("ChargedOff", "Fully Paid")))
+print("Profit/Loss Matrix (Incremental relative to CDs):")
+print(profit_matrix)
+
+
+total_incremental_profit <- sum(cm * profit_matrix)
+sprintf("Total Incremental Profit: $%.2f", total_incremental_profit)
+
+```
+```{r}
+
+results_df <- data.frame(prob_fully_paid = pred_test, actual = colcdfTst)
+# Convert actual labels to factor with descriptive names
+results_df$actual <- factor(results_df$actual, levels = c(0,1), labels = c("ChargedOff", "Fully Paid"))
+
+compute_profit <- function(threshold, df) {
+  df$predicted <- ifelse(df$prob_fully_paid >= threshold, 1, 0)
+  df$predicted_label <- ifelse(df$predicted == 1, "Fully Paid", "ChargedOff")
+
+  df$profit <- ifelse(df$predicted == 1 & df$actual == "Fully Paid", 6,
+                      ifelse(df$predicted == 1 & df$actual == "ChargedOff", -6, 0))
+  return(sum(df$profit))
+}
+
+
+thresholds <- seq(0, 1, by = 0.01)
+profit_by_threshold <- sapply(thresholds, compute_profit, df = results_df)
+
+
+max_profit <- max(profit_by_threshold)
+optimal_threshold <- thresholds[which.max(profit_by_threshold)]
+sprintf("Optimal threshold: %.2f, Maximum Incremental Profit: $%.2f", optimal_threshold, max_profit)
+
+plot(thresholds, profit_by_threshold, type = "l", 
+     xlab = "Threshold (Probability Cutoff)", ylab = "Cumulative Incremental Profit",
+     main = "Incremental Profit vs. Threshold")
+abline(v = optimal_threshold, col = "red", lty = 2)
+text(optimal_threshold, max_profit, labels = sprintf("Optimal: %.2f", optimal_threshold), pos = 4, col = "red")
+
+```
+
+Number 8
+```{r}
+#8
+
+# Prepare predictors (remove leakage & targets)
+xD <- lcdfTrn %>%
+  select(-loan_status, -actualTerm, -annRet, -actualReturn) %>%
+  select(where(is.numeric)) %>%
+  mutate(across(everything(), ~replace_na(., median(., na.rm = TRUE))))
+
+# Define response
+yD <- lcdfTrn$actualReturn
+
+#Lasso regression using cross-validation
+library(glmnet)
+
+glmRet_cv <- cv.glmnet(data.matrix(xD), yD, family = "gaussian")
+
+# Extract non-zero coefficient variable names
+coefs <- as.matrix(coef(glmRet_cv, s = "lambda.min"))
+nzCoefVars <- rownames(coefs)[which(coefs != 0)]
+nzCoefVars <- nzCoefVars[nzCoefVars != "(Intercept)"]
+
+# Fit a non-regularized GLM using selected variables
+glmRet_nzv <- glm(yD ~ data.matrix(xD %>% select(all_of(nzCoefVars))), family = gaussian())
+
+#View summary
+summary(glmRet_nzv)
+
+#(b)Random Forest Model
+
+# Load library
+library(randomForest)
+
+
+rf_vars <- nzCoefVars
+
+# Prepare training data with NA handling
+rf_data <- lcdfTrn %>%
+  select(all_of(rf_vars), actualReturn) %>%
+  mutate(across(everything(), ~replace_na(., median(., na.rm = TRUE))))
+
+# Train the Random Forest model
+rf_ret <- randomForest(
+  actualReturn ~ .,
+  data = rf_data,
+  ntree = 50,
+  maxnodes = 20,
+  importance = TRUE
+)
+
+
+# Print model summary
+print(rf_ret)
+
+# Plot variable importance
+varImpPlot(rf_ret)
+
+
+#(c)Boosting model\
+
+library(xgboost)
+
+# Step 1: Prepare data
+xgbTrn <- lcdfTrn %>%
+  select(all_of(nzCoefVars)) %>%
+  mutate(across(everything(), ~replace_na(., median(., na.rm = TRUE))))
+
+xgbTst <- lcdfTst %>%
+  select(all_of(nzCoefVars)) %>%
+  mutate(across(everything(), ~replace_na(., median(., na.rm = TRUE))))
+
+yTrn <- lcdfTrn$actualReturn
+yTst <- lcdfTst$actualReturn
+
+#Convert to DMatrix
+dtrain <- xgb.DMatrix(data = data.matrix(xgbTrn), label = yTrn)
+dtest  <- xgb.DMatrix(data = data.matrix(xgbTst), label = yTst)
+
+#Hyperparameter tuning
+paramGrid <- expand.grid(
+  max_depth = c(3, 5),
+  eta = c(0.01, 0.1)
+)
+
+tuning_results <- data.frame()
+
+for (i in 1:nrow(paramGrid)) {
+  param <- list(
+    objective = "reg:squarederror",
+    max_depth = paramGrid$max_depth[i],
+    eta = paramGrid$eta[i]
+  )
+  
+  cv_model <- xgb.cv(
+    params = param,
+    data = dtrain,
+    nrounds = 100,
+    nfold = 5,
+    early_stopping_rounds = 10,
+    verbose = 0
+  )
+  
+  best_iter <- cv_model$best_iteration
+  best_rmse <- min(cv_model$evaluation_log$test_rmse_mean)
+  
+  tuning_results <- rbind(
+    tuning_results,
+    cbind(paramGrid[i, ], best_iter, best_rmse)
+  )
+}
+
+#Train final model using best parameters
+best_row <- which.min(tuning_results$best_rmse)
+final_params <- as.list(paramGrid[best_row, ])
+
+xgb_ret <- xgb.train(
+  params = c(final_params, list(objective = "reg:squarederror")),
+  data = dtrain,
+  nrounds = tuning_results$best_iter[best_row]
+)
+
+# Show variable importance
+xgb.importance(model = xgb_ret) %>% xgb.plot.importance()
+
+#(d) 
+
+
+#  Prepare test data
+xTest <- lcdfTst %>%
+  select(all_of(nzCoefVars)) %>%
+  mutate(across(everything(), ~replace_na(., median(., na.rm = TRUE))))
+
+#Get actual test target
+yTst <- lcdfTst$actualReturn
+
+# Make predictions
+
+# GLM
+glm_preds <- predict(glmRet_nzv, newdata = data.frame(data.matrix(xTest)))
+
+# Random Forest
+rf_preds <- predict(rf_ret, newdata = xTest)
+
+# XGBoost
+xgb_preds <- predict(xgb_ret, newdata = dtest)
+
+#Define RMSE function
+rmse <- function(actual, predicted) {
+  sqrt(mean((actual - predicted)^2))
+}
+
+#Tabulate results
+results <- data.frame(
+  Model = c("GLM (Lasso)", "Random Forest", "XGBoost"),
+  RMSE = c(
+    rmse(yTst, glm_preds),
+    rmse(yTst, rf_preds),
+    rmse(yTst, xgb_preds)
+  )
+)
+
+print(results)
+
+```
+
+Number 9
+```{r}
+#combine both results of the loan_status and loan_return into lcdf
+#then add a new column as expected_return by multiplying the values
+combined_results <-lcdfTst%>% mutate(prob_fully_paid= scoreTst3$predictions[, "Fully Paid"],predicted_return= xgb_preds)
+
+combined_results <-combined_results %>%mutate(expected_return= prob_fully_paid* predicted_return)
+
+#Compare each performance by filtering and averaging their top selections
+
+# combined approach
+combined_top<- head(arrange(combined_results, desc(expected_return)), n=100)
+combined_avg<- mean(combined_top$actualReturn, na.rm = TRUE)
+
+# Loan_Returns Approach Only
+returns_top<- head(arrange(combined_results, desc(predicted_return)),n=100)
+returns_avg<- mean(returns_top$actualReturn, na.rm = TRUE)
+
+# Loan_Status approach Only
+status_top<- head(arrange(combined_results,desc(prob_fully_paid)),n= 100)
+status_avg<- mean(status_top$actualReturn,na.rm = TRUE)
+
+performance_table <- data.frame(
+  Approach = c("Combined", "Loan_returns", "Loan_Status"),
+  Average_Return= c(combined_avg, returns_avg,status_avg)
+)
+
+performance_table
+```
+
+
