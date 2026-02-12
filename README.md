@@ -158,3 +158,24 @@ Random Forest models achieved the strongest performance, indicating that selecti
 
 This project demonstrates an end-to-end **decision analytics workflow**, from exploratory risk analysis to model-driven investment strategy design, with a focus on interpretability, realism, and business relevance.
 
+## How to Run (Reproducibility)
+
+This repository does not include the original dataset used in the analysis (it was provided for academic use as part of IDS 572).
+
+To reproduce the workflow, you have two options:
+
+**Option A — Use a comparable public Lending Club dataset**
+1. Download a public Lending Club loan dataset (e.g., 2013–2015 loans) from a reputable source.
+2. Save the file locally as `data/loans.csv`.
+3. Open `loan-default-analysis_partB_modeling.Rmd` in RStudio.
+4. Update the data import line to point to your local file path (and adjust column names if needed).
+5. Install required packages and run the notebook top-to-bottom.
+
+**Option B — Review as a case study**
+If you do not have access to the dataset, the README and notebook still document:
+- the decision task (default + returns modeling),
+- methodology,
+- feature engineering,
+- evaluation approach,
+- and investment strategy logic.
+
